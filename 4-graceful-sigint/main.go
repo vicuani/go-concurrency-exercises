@@ -26,8 +26,6 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT)
 
-	killChan := make(chan bool, 1)
-
 	go func() {
 		proc.Run()
 	}()
@@ -39,9 +37,8 @@ func main() {
 
 		<-sigChan
 		fmt.Println("\nSIGINT received again, forcing shutdown.")
-		killChan <- true
+		os.Exit(0)
 	}()
 
-	<-killChan
-	fmt.Println("Program terminated.")
+	select {}
 }

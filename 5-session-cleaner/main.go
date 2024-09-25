@@ -54,6 +54,9 @@ func (m *SessionManager) CreateSession() (string, error) {
 		return "", err
 	}
 
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	m.sessions[sessionID] = Session{
 		Data: make(map[string]interface{}),
 		LastActivity: time.Now(),

@@ -10,7 +10,10 @@
 
 package main
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 const FreeTierTimeLimit int64 = 10
 
@@ -19,35 +22,45 @@ const FreeTierTimeLimit int64 = 10
 type User struct {
 	ID        int
 	IsPremium bool
-	TimeUsed  int64 // in seconds
+
+	TimeUsedmu sync.Mutex
+	TimeUsed   int64 // in seconds
 }
 
 // HandleRequest runs the processes requested by users. Returns false
 // if process had to be killed
 func HandleRequest(process func(), u *User) bool {
-	if !u.IsPremium {
-		if u.TimeUsed >= FreeTierTimeLimit {
-			return false
-		}
+	if u.IsPremium {
+		process()
+		return true
 	}
 
-	processDuration := measureProcessDuration(process)
+	u.TimeUsedmu.Lock()
+	defer u.TimeUsedmu.Unlock()
 
-	if !u.IsPremium {
-		u.TimeUsed += processDuration
-		if u.TimeUsed > FreeTierTimeLimit {
-			return false
-		}
+	if u.TimeUsed >= FreeTierTimeLimit {
+		return false
 	}
 
-	return true
-}
-
-func measureProcessDuration(process func()) int64 {
 	start := time.Now()
-	process()
-	elapsed := time.Since(start)
-	return int64(elapsed.Seconds())
+
+	finishChan := make(chan bool)
+	go func() {
+		defer close(finishChan)
+		process()
+		finishChan <- true
+	}()
+
+	for {
+		select {
+		case <-finishChan:
+			u.TimeUsed += int64(time.Since(start).Seconds())
+			return u.TimeUsed <= FreeTierTimeLimit
+		case <-time.After(time.Duration(FreeTierTimeLimit) * time.Second):
+			u.TimeUsed = FreeTierTimeLimit
+			return false
+		}
+	}
 }
 
 func main() {
