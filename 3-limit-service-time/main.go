@@ -10,19 +10,57 @@
 
 package main
 
+import (
+	"sync"
+	"time"
+)
+
+const FreeTierTimeLimit int64 = 10
+
 // User defines the UserModel. Use this to check whether a User is a
 // Premium user or not
 type User struct {
 	ID        int
 	IsPremium bool
-	TimeUsed  int64 // in seconds
+
+	TimeUsedmu sync.Mutex
+	TimeUsed   int64 // in seconds
 }
 
 // HandleRequest runs the processes requested by users. Returns false
 // if process had to be killed
 func HandleRequest(process func(), u *User) bool {
-	process()
-	return true
+	if u.IsPremium {
+		process()
+		return true
+	}
+
+	u.TimeUsedmu.Lock()
+	defer u.TimeUsedmu.Unlock()
+
+	if u.TimeUsed >= FreeTierTimeLimit {
+		return false
+	}
+
+	start := time.Now()
+
+	finishChan := make(chan bool)
+	go func() {
+		defer close(finishChan)
+		process()
+		finishChan <- true
+	}()
+
+	for {
+		select {
+		case <-finishChan:
+			u.TimeUsed += int64(time.Since(start).Seconds())
+			return u.TimeUsed <= FreeTierTimeLimit
+		case <-time.After(time.Duration(FreeTierTimeLimit) * time.Second):
+			u.TimeUsed = FreeTierTimeLimit
+			return false
+		}
+	}
 }
 
 func main() {

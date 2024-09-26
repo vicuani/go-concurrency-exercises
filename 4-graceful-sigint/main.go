@@ -13,10 +13,32 @@
 
 package main
 
-func main() {
-	// Create a process
-	proc := MockProcess{}
+import (
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+)
 
-	// Run the process (blocking)
-	proc.Run()
+func main() {
+	proc := &MockProcess{}
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT)
+
+	go func() {
+		proc.Run()
+	}()
+
+	go func() {
+		<-sigChan
+		fmt.Println("\nSIGINT received, trying to stop the process...")
+		go proc.Stop()
+
+		<-sigChan
+		fmt.Println("\nSIGINT received again, forcing shutdown.")
+		os.Exit(0)
+	}()
+
+	select {}
 }
